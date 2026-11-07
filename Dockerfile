@@ -123,6 +123,16 @@ COPY vendored/OpenRCT2 /app/vendored/OpenRCT2
 COPY patches/openrct2-ttf-emscripten.patch /app/patches/
 RUN cd /app/vendored/OpenRCT2 && patch -p1 < /app/patches/openrct2-ttf-emscripten.patch
 
+# 디버그용 링크 플래그 제거 (런타임 검사/GL 호출 로깅이 켜져 있으면 느려요).
+# 못 찾아도 빌드는 계속 진행하고, 결과는 로그에 찍어요.
+RUN cd /app/vendored/OpenRCT2 && \
+  sed -i -e 's/ -gsource-map//' \
+         -e 's/-s ASSERTIONS=2/-s ASSERTIONS=0/' \
+         -e 's/ -s EXCEPTION_DEBUG=1//' \
+         -e 's/ -s GL_DEBUG=1//' \
+         src/openrct2-ui/CMakeLists.txt && \
+  (grep -n "ASSERTIONS\|GL_DEBUG\|EXCEPTION_DEBUG\|gsource-map" src/openrct2-ui/CMakeLists.txt | cut -c1-200 || true)
+
 RUN $PRE && \
   cd /app/assets && \
   cmake /app/vendored/OpenRCT2 \
@@ -159,6 +169,7 @@ RUN cd /app/build && \
     -DDISABLE_HTTP:BOOL=FALSE \
     -DDISABLE_TTF:BOOL=FALSE \
     -DCMAKE_BUILD_TYPE=Release \
+    -DDISABLE_IPO:BOOL=TRUE \
     -DENABLE_SCRIPTING:BOOL=FALSE \
     -DENABLE_SCRIPTING:BOOL=FALSE \
     -DDISABLE_FLAC:BOOL=TRUE \
