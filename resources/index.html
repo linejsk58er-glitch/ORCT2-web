@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="ko">
   <head>
     <meta charset="utf-8" />
-    <title>Scream.js</title>
+    <title>롤러코스터 타이쿤 2 (OpenRCT2)</title>
     <script src="fflate.min.js"></script>
   </head>
 
@@ -30,10 +30,10 @@
     <canvas id="screen" width="1600" height="1200"></canvas>
     <div id="overlay">
       <div id="overlay-text"></div>
-      <label for="data-folder" id="folder-label">Select your RCT2 data path</label>
+      <label for="data-folder" id="folder-label">RCT2 게임 폴더를 선택하세요</label>
       <input id="data-folder" type="file" webkitdirectory="1"/>
       <div id="zip-pick" style="margin-top: 2em">
-        <label for="data-zip">...or choose a .zip of that folder (폴더를 압축한 .zip 파일)</label>
+        <label for="data-zip">또는 그 폴더를 압축한 .zip 파일을 선택하세요</label>
         <input id="data-zip" type="file" accept=".zip,application/zip,application/x-zip-compressed"/>
       </div>
     </div>
@@ -95,7 +95,7 @@
                 console.error(e);
                 document.getElementById("overlay").style.display = "";
                 document.getElementById("overlay-text").textContent =
-                  "Couldn't import the zip (" + e.message + "). Reload the page and try again.";
+                  "zip을 가져오지 못했어요 (" + e.message + "). 페이지를 새로고침하고 다시 시도해 주세요.";
                 // Leave the run dependency pending so the game doesn't start without its data
                 return;
               }
@@ -147,10 +147,10 @@
 
       async function readZipEntries(file) {
         if (typeof fflate === "undefined") {
-          throw new Error("fflate.min.js is missing next to index.html");
+          throw new Error("index.html 옆에 fflate.min.js 파일이 없어요");
         }
         const tailLen = Math.min(file.size, 22 + 65535);
-        if (tailLen < 22) throw new Error("not a zip file");
+        if (tailLen < 22) throw new Error("zip 파일이 아니에요");
         const tail = new DataView(await file.slice(file.size - tailLen).arrayBuffer());
         let eocd = -1;
         for (let i = tailLen - 22; i >= 0; i--) {
@@ -159,12 +159,12 @@
             break;
           }
         }
-        if (eocd < 0) throw new Error("not a zip file");
+        if (eocd < 0) throw new Error("zip 파일이 아니에요");
         const total = tail.getUint16(eocd + 10, true);
         const cdSize = tail.getUint32(eocd + 12, true);
         const cdOffset = tail.getUint32(eocd + 16, true);
         if (total === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) {
-          throw new Error("zip64 archives are not supported");
+          throw new Error("4GB가 넘는 zip(zip64)은 지원하지 않아요");
         }
         const cd = new DataView(await file.slice(cdOffset, cdOffset + cdSize).arrayBuffer());
         const decoder = new TextDecoder();
@@ -180,14 +180,14 @@
           const clen = cd.getUint16(p + 32, true);
           const lho = cd.getUint32(p + 42, true);
           if (csize === 0xffffffff || usize === 0xffffffff || lho === 0xffffffff) {
-            throw new Error("zip64 archives are not supported");
+            throw new Error("4GB가 넘는 zip(zip64)은 지원하지 않아요");
           }
           const rawName = new Uint8Array(cd.buffer, cd.byteOffset + p + 46, nlen);
           const name = decoder.decode(rawName).replace(/\\/g, "/");
           entries.push({ name, flags, method, csize, usize, lho });
           p += 46 + nlen + elen + clen;
         }
-        if (entries.length !== total) throw new Error("the zip's file list looks damaged");
+        if (entries.length !== total) throw new Error("zip의 파일 목록이 손상된 것 같아요");
         return entries;
       }
 
@@ -205,13 +205,13 @@
           if (candidate !== "" && !candidate.endsWith("/")) continue;
           if (prefix === null || candidate.length < prefix.length) prefix = candidate;
         }
-        if (prefix === null) throw new Error("No Data/ch.dat file");
+        if (prefix === null) throw new Error("Data/ch.dat 파일이 없어요");
         const plan = files
           .filter((e) => e.name.startsWith(prefix))
           .map((e) => ({ ...e, dest: ZIP_DEST + e.name.slice(prefix.length) }));
         // check every path up front so a bad zip is rejected before anything is written
         for (const e of plan) {
-          if (e.dest.split("/").includes("..")) throw new Error("unsafe path in zip: " + e.name);
+          if (e.dest.split("/").includes("..")) throw new Error("zip 안에 위험한 경로가 있어요: " + e.name);
         }
         return plan;
       }
@@ -223,19 +223,25 @@
         let done = 0;
         for (const e of plan) totalBytes += e.usize;
         for (const e of plan) {
-          if (e.flags & 1) throw new Error("password-protected zips are not supported");
+          if (e.flags & 1) throw new Error("비밀번호가 걸린 zip은 지원하지 않아요");
           if (e.method !== 0 && e.method !== 8) {
-            throw new Error("unsupported compression method " + e.method + " (" + e.name + ")");
+            throw new Error("지원하지 않는 압축 방식이에요 (방식 " + e.method + ", " + e.name + ")");
           }
-          if (e.dest.split("/").includes("..")) throw new Error("unsafe path in zip: " + e.name);
+          if (e.dest.split("/").includes("..")) throw new Error("zip 안에 위험한 경로가 있어요: " + e.name);
           const lh = new DataView(await file.slice(e.lho, e.lho + 30).arrayBuffer());
           if (lh.byteLength < 30 || lh.getUint32(0, true) !== 0x04034b50) {
-            throw new Error("damaged entry: " + e.name);
+            throw new Error("손상된 항목: " + e.name);
           }
           const start = e.lho + 30 + lh.getUint16(26, true) + lh.getUint16(28, true);
           let data = new Uint8Array(await file.slice(start, start + e.csize).arrayBuffer());
-          if (e.method === 8) data = fflate.inflateSync(data, { out: new Uint8Array(e.usize) });
-          if (data.length !== e.usize) throw new Error("size mismatch: " + e.name);
+          if (e.method === 8) {
+            try {
+              data = fflate.inflateSync(data, { out: new Uint8Array(e.usize) });
+            } catch (err) {
+              throw new Error("압축 데이터가 손상됐어요: " + e.name);
+            }
+          }
+          if (data.length !== e.usize) throw new Error("크기가 맞지 않아요: " + e.name);
           const dir = e.dest.slice(0, e.dest.lastIndexOf("/"));
           if (!madeDirs.has(dir)) {
             fsApi.mkdirTree(dir);
@@ -252,7 +258,7 @@
       function zipProgress(done, total, doneBytes, totalBytes) {
         if (done % 10 !== 0 && done !== total) return;
         document.getElementById("overlay-text").textContent =
-          "Importing " + done + "/" + total + " files (" +
+          "RCT2 파일 가져오는 중... " + done + "/" + total + "개 (" +
           ((doneBytes / 1048576) | 0) + " / " + ((totalBytes / 1048576) | 0) + " MB)";
       }
 
@@ -300,7 +306,7 @@
             if (arrayBuffer) {
               assets[path] = new Uint8Array(arrayBuffer);
               assetsReceived++;
-              document.getElementById("overlay-text").textContent = `${
+              document.getElementById("overlay-text").textContent = `게임 파일 내려받는 중... ${
                 ((100 * assetsReceived) / assetsTotal) | 0
               }%`;
             } else {
@@ -349,7 +355,7 @@
           document.getElementById("data-folder").remove();
           const ackButton = document.createElement("button");
           ackButton.id = "data-folder";
-          ackButton.textContent = "Pick your RCT2 Data directory"
+          ackButton.textContent = "RCT2 게임 폴더 선택"
           document.getElementById("overlay").appendChild(ackButton);
         }
         let prom = customDirectoryPicker();
@@ -378,7 +384,7 @@
               const files = await Promise.race([prom, zipProm]);
               if (files && files.zip) {
                 setPickersVisible(false);
-                overlayText.textContent = "Reading zip...";
+                overlayText.textContent = "zip 파일 읽는 중...";
                 const plan = planZipImport(await readZipEntries(files.zip));
                 window.pendingZip = { file: files.zip, plan };
               } else if (typeof FileSystemDirectoryHandle !== "undefined" && files instanceof FileSystemDirectoryHandle) {
@@ -387,7 +393,7 @@
               } else {
                 const filesArr = Array.from(files).map(file => ({file, path: file.webkitRelativePath.slice(file.webkitRelativePath.indexOf("/") + 1)}));
                 if (!filesArr.some(file => file.path == "Data/ch.dat")) {
-                  throw new Error("No Data/ch.dat file");
+                  throw new Error("Data/ch.dat 파일이 없어요");
                 }
                 for(const file of filesArr) {
                   assets["/rct2-data-path/app/" + file.path] = new Uint8Array(await file.file.arrayBuffer());
@@ -397,7 +403,7 @@
             } catch(err) {
               console.error(err);
               setPickersVisible(true);
-              overlayText.textContent = "Sorry, that didn't look right. The game folder (or zip) should contain a folder named 'Data' which contains 'ch.dat' (" + err.message + ")";
+              overlayText.textContent = "올바른 폴더가 아닌 것 같아요. 'Data' 폴더 안에 'ch.dat' 파일이 들어 있는 RCT2 게임 폴더(또는 그 폴더의 zip)를 선택해 주세요. (" + err.message + ")";
             }
             prom = customDirectoryPicker();
             zipProm = customZipPicker();
@@ -407,7 +413,7 @@
 
         if (window.pendingZip) {
           // keep the overlay up to show import progress; it's hidden once the import is done
-          overlayText.textContent = "Starting import...";
+          overlayText.textContent = "가져오기 준비 중...";
         } else {
           document.getElementById("overlay").style.display = "none";
         }

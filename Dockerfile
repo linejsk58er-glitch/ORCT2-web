@@ -191,3 +191,4 @@ RUN sed -i 's/ index /add_header Cross-Origin-Opener-Policy same-origin; index /
 COPY resources/config.ini /usr/share/nginx/html/user-data-path/
 COPY resources/index.html /usr/share/nginx/html/
 COPY resources/fflate.min.js /usr/share/nginx/html/
+COPY resources/50x.html /usr/share/nginx/html/50x.html
