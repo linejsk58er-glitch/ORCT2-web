@@ -1,0 +1,105 @@
+diff --git a/src/openrct2/CMakeLists.txt b/src/openrct2/CMakeLists.txt
+index 55882a1..4c8ec70 100644
+--- a/src/openrct2/CMakeLists.txt
++++ b/src/openrct2/CMakeLists.txt
+@@ -80,20 +80,26 @@ if (NOT DISABLE_HTTP)
+ endif ()
+ 
+ if (NOT DISABLE_TTF)
+-    if (UNIX AND NOT APPLE AND NOT MSVC)
+-        PKG_CHECK_MODULES(FONTCONFIG REQUIRED fontconfig)
+-    endif ()
+-        
+-    if (MSVC)
+-        find_package(freetype REQUIRED)
++    if (EMSCRIPTEN)
++        # Emscripten has no fontconfig, and FreeType comes from the Emscripten port.
++        # Fonts are looked up in the virtual filesystem (see Platform.Linux.cpp).
++        target_compile_options(${PROJECT_NAME} PUBLIC -sUSE_FREETYPE=1)
+     else ()
+-        PKG_CHECK_MODULES(FREETYPE REQUIRED IMPORTED_TARGET freetype2)
+-    endif ()
+-        
+-    target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${FREETYPE_INCLUDE_DIRS})
+-        
+-    if (UNIX AND NOT APPLE)
+-        target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${FONTCONFIG_INCLUDE_DIRS})
++        if (UNIX AND NOT APPLE AND NOT MSVC)
++            PKG_CHECK_MODULES(FONTCONFIG REQUIRED fontconfig)
++        endif ()
++
++        if (MSVC)
++            find_package(freetype REQUIRED)
++        else ()
++            PKG_CHECK_MODULES(FREETYPE REQUIRED IMPORTED_TARGET freetype2)
++        endif ()
++
++        target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${FREETYPE_INCLUDE_DIRS})
++
++        if (UNIX AND NOT APPLE)
++            target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${FONTCONFIG_INCLUDE_DIRS})
++        endif ()
+     endif ()
+ endif ()
+ 
+@@ -185,7 +191,9 @@ if (NOT MINGW AND NOT MSVC)
+     endif ()
+ endif ()
+ 
+-if (NOT DISABLE_TTF)
++if (NOT DISABLE_TTF AND EMSCRIPTEN)
++    target_link_libraries(${PROJECT_NAME} -sUSE_FREETYPE=1)
++elseif (NOT DISABLE_TTF)
+     if (STATIC)
+         target_link_libraries(${PROJECT_NAME} ${FREETYPE_STATIC_LIBRARIES})
+             
+diff --git a/src/openrct2/platform/Platform.Linux.cpp b/src/openrct2/platform/Platform.Linux.cpp
+index 516c126..2058dd2 100644
+--- a/src/openrct2/platform/Platform.Linux.cpp
++++ b/src/openrct2/platform/Platform.Linux.cpp
+@@ -25,12 +25,13 @@
+ // for PATH_MAX
+ #        include <linux/limits.h>
+ #    endif // __linux__
+-#    ifndef NO_TTF
++#    if !defined(NO_TTF) && !defined(__EMSCRIPTEN__)
+ #        include <fontconfig/fontconfig.h>
+-#    endif // NO_TTF
++#    endif // !NO_TTF && !__EMSCRIPTEN__
+ 
+ #    include "../Date.h"
+ #    include "../OpenRCT2.h"
++#    include "../core/File.h"
+ #    include "../core/Path.hpp"
+ #    include "../localisation/Language.h"
+ #    include "Platform.h"
+@@ -314,7 +315,28 @@ namespace Platform
+         return {};
+     }
+ 
+-#    ifndef NO_TTF
++#    if !defined(NO_TTF) && defined(__EMSCRIPTEN__)
++    std::string GetFontPath(const TTFFontDescriptor& font)
++    {
++        // There is no fontconfig (nor any system fonts) in the browser. Fonts are instead shipped
++        // with the web build and placed into the virtual filesystem, next to the game data.
++        static constexpr const char* searchDirs[] = {
++            "/persistent/rct2-data-path/fonts",
++            "/persistent/user-data-path/fonts",
++        };
++
++        for (const auto* dir : searchDirs)
++        {
++            auto path = Path::Combine(dir, font.filename);
++            LOG_VERBOSE("Looking for font %s at %s.", font.font_name, path.c_str());
++            if (File::Exists(path))
++            {
++                return path;
++            }
++        }
++        return {};
++    }
++#    elif !defined(NO_TTF)
+     std::string GetFontPath(const TTFFontDescriptor& font)
+     {
+         LOG_VERBOSE("Looking for font %s with FontConfig.", font.font_name);

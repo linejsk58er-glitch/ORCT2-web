@@ -80,7 +80,7 @@
             if (typeof localStorage != "undefined") {
               FS.syncfs(false, (err) => {
                 if (!err) {
-                  localStorage["rct2-data-version"] = 1;
+                  localStorage["rct2-data-version"] = 2;
                   localStorage["rct2-data-checked"] = 1;
                 }
                 console.log("FS sync'd! ...Bang!", err);
@@ -196,7 +196,7 @@
           document.getElementById("overlay").appendChild(ackButton);
         }
         let prom = customDirectoryPicker();
-        if (localStorage["rct2-data-version"] != 1) {
+        if (localStorage["rct2-data-version"] != 2) {
           const loads = await fetch("output.json")
             .then((response) => response.json())
             .then((json) => {

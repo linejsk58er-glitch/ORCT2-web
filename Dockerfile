@@ -120,6 +120,8 @@ RUN mkdir /app/vendored/vorbis/build && \
   emmake make install
 
 COPY vendored/OpenRCT2 /app/vendored/OpenRCT2
+COPY patches/openrct2-ttf-emscripten.patch /app/patches/
+RUN cd /app/vendored/OpenRCT2 && patch -p1 < /app/patches/openrct2-ttf-emscripten.patch
 
 RUN $PRE && \
   cd /app/assets && \
@@ -155,7 +157,7 @@ RUN cd /app/build && \
     -DSPEEXDSP_INCLUDE_DIR="/app/vendored/speexdsp/include" \
     -DSPEEXDSP_LIBRARY="/app/vendored/speexdsp/libspeexdsp/.libs/libspeexdsp.a" \
     -DDISABLE_HTTP:BOOL=FALSE \
-    -DDISABLE_TTF:BOOL=TRUE \
+    -DDISABLE_TTF:BOOL=FALSE \
     -DENABLE_SCRIPTING:BOOL=FALSE \
     -DENABLE_SCRIPTING:BOOL=FALSE \
     -DDISABLE_FLAC:BOOL=TRUE \
@@ -165,6 +167,7 @@ RUN cd /app/build && \
 WORKDIR /app/www
 
 COPY tools /app/tools
+COPY resources/fonts /app/fonts
 
 RUN mkdir -p /app/www/{user,rct2}-data-path && \
   $PRE && \
@@ -173,6 +176,8 @@ RUN mkdir -p /app/www/{user,rct2}-data-path && \
   cp -vR /app/assets/{g2.dat,object,sequence} \
     /app/vendored/OpenRCT2/data/language \
     /app/www/rct2-data-path && \
+  mkdir -p /app/www/rct2-data-path/fonts && \
+  cp -v /app/fonts/NanumGothic.ttf /app/www/rct2-data-path/fonts/ && \
   /app/tools/gestalt.py -i /app/tools/gestalt.py -i ./rct2-data-path -o .
 
 FROM docker.io/nginxinc/nginx-unprivileged

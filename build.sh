@@ -184,6 +184,11 @@ build_openrct2_assets() {
 }
 
 build_openrct2() {
+  # Enable TrueType fonts (CJK) under Emscripten: no fontconfig, FreeType port, fonts from virtual FS
+  if ! grep -q "__EMSCRIPTEN__" "$OPENRCT_SRCROOT/src/openrct2/platform/Platform.Linux.cpp"; then
+    patch -d "$OPENRCT_SRCROOT" -p1 < "$PATCHES_ROOT/openrct2-ttf-emscripten.patch"
+  fi
+
   pushd $OPENRCT_BUILDROOT
   emcmake env \
       PKG_CONFIG_PATH="$EMSDK_ROOT/upstream/emscripten/cache/sysroot/local/lib/pkgconfig:$EMSDK_ROOT/upstream/emscripten/cache/sysroot/lib/pkgconfig:$EMSDK_ROOT/upstream/emscripten/cache/sysroot/share/pkgconfig" \
@@ -202,7 +207,7 @@ build_openrct2() {
     -DSPEEXDSP_INCLUDE_DIR="$SPEEXDSP_ROOT/include" \
     -DSPEEXDSP_LIBRARY="$SPEEXDSP_ROOT/libspeexdsp/.libs/libspeexdsp.a" \
     -DDISABLE_HTTP:BOOL=FALSE \
-    -DDISABLE_TTF:BOOL=TRUE \
+    -DDISABLE_TTF:BOOL=FALSE \
     -DENABLE_SCRIPTING:BOOL=FALSE \
     -DDISABLE_FLAC:BOOL=TRUE \
     -DCMAKE_SYSTEM_NAME=Emscripten
@@ -237,6 +242,8 @@ master_resources() {
   cp -vR "$OPENRCT_ASSET_BUILDROOT/object" "./rct2-data-path"
   cp -vR "$OPENRCT_ASSET_BUILDROOT/sequence" "./rct2-data-path"
   cp -vR "$OPENRCT_SRCROOT/data/language" "./rct2-data-path"
+  mkdir -p "./rct2-data-path/fonts"
+  cp -v "$RESOURCE_ROOT/fonts/NanumGothic.ttf" "./rct2-data-path/fonts/"
 
   # Scan ourseslves to discover assets
   $TOOLS_ROOT/gestalt.py -i ./rct2-data-path -o .
