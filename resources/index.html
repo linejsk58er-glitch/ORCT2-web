@@ -2,15 +2,21 @@
 <html lang="ko">
   <head>
     <meta charset="utf-8" />
+    <meta name="color-scheme" content="dark" />
     <title>롤러코스터 타이쿤 2 (OpenRCT2)</title>
     <script src="fflate.min.js"></script>
   </head>
 
   <body>
     <style>
+      html,
       body {
         margin: 0;
         padding: 0;
+        background: #000;
+        color: #eee;
+        color-scheme: dark;
+        font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
       }
 
       #screen,
@@ -25,6 +31,7 @@
       #overlay {
         padding-top: 10%;
         text-align: center;
+        color: #eee;
       }
     </style>
     <canvas id="screen" width="1600" height="1200"></canvas>
