@@ -158,6 +158,7 @@ RUN cd /app/build && \
     -DSPEEXDSP_LIBRARY="/app/vendored/speexdsp/libspeexdsp/.libs/libspeexdsp.a" \
     -DDISABLE_HTTP:BOOL=FALSE \
     -DDISABLE_TTF:BOOL=FALSE \
+    -DCMAKE_BUILD_TYPE=Release \
     -DENABLE_SCRIPTING:BOOL=FALSE \
     -DENABLE_SCRIPTING:BOOL=FALSE \
     -DDISABLE_FLAC:BOOL=TRUE \
