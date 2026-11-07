@@ -230,6 +230,7 @@ master_resources() {
   sed -i='' -e 's/throw "getpwuid: TODO"/return 0/' "$OPENRCT_BUILDROOT/openrct2.js"
 
   cp -v "$RESOURCE_ROOT/index.html" .
+  cp -v "$RESOURCE_ROOT/fflate.min.js" .
   cp -v "$OPENRCT_BUILDROOT/openrct2.js" .
   cp -v "$OPENRCT_BUILDROOT/openrct2.worker.js" .
   cp -v "$OPENRCT_BUILDROOT/openrct2.wasm" .

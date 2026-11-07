@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <title>Scream.js</title>
+    <script src="fflate.min.js"></script>
   </head>
 
   <body>
@@ -29,8 +30,12 @@
     <canvas id="screen" width="1600" height="1200"></canvas>
     <div id="overlay">
       <div id="overlay-text"></div>
-      <label for="data-folder">Select your RCT2 data path</label>
+      <label for="data-folder" id="folder-label">Select your RCT2 data path</label>
       <input id="data-folder" type="file" webkitdirectory="1"/>
+      <div id="zip-pick" style="margin-top: 2em">
+        <label for="data-zip">...or choose a .zip of that folder (폴더를 압축한 .zip 파일)</label>
+        <input id="data-zip" type="file" accept=".zip,application/zip,application/x-zip-compressed"/>
+      </div>
     </div>
     <script>
       var assets = {};
@@ -49,7 +54,7 @@
           FS.init(() => null);
           FS.mkdirTree("/persistent");
           FS.mount(IDBFS, {}, "/persistent");
-          FS.syncfs(true, (err) => {
+          FS.syncfs(true, async (err) => {
             FS.mkdirTree("/persistent/user-data-path");
             FS.mkdirTree("/persistent/rct2-data-path");
             for (const assetKey of Object.keys(assets)) {
@@ -76,6 +81,24 @@
               FS.close(stream);
   
               delete assets[assetKey];
+            }
+            if (window.pendingZip) {
+              // The user picked a zip: unpack it one file at a time straight into the virtual FS
+              try {
+                await importZip(window.pendingZip.file, window.pendingZip.plan, {
+                  mkdirTree: (p) => FS.mkdirTree(p),
+                  writeFile: (p, d) => FS.writeFile(p, d, { canOwn: true }),
+                }, zipProgress);
+                window.pendingZip = null;
+                document.getElementById("overlay").style.display = "none";
+              } catch (e) {
+                console.error(e);
+                document.getElementById("overlay").style.display = "";
+                document.getElementById("overlay-text").textContent =
+                  "Couldn't import the zip (" + e.message + "). Reload the page and try again.";
+                // Leave the run dependency pending so the game doesn't start without its data
+                return;
+              }
             }
             if (typeof localStorage != "undefined") {
               FS.syncfs(false, (err) => {
@@ -116,6 +139,140 @@
 
       let assetsReceived = 0;
       let assetsTotal = 0;
+
+      // ZIPIMPORT-BEGIN
+      // Reads the zip's central directory with File.slice(), so the zip is never loaded
+      // into memory as a whole, and each entry is inflated and written one at a time.
+      const ZIP_DEST = "/persistent/rct2-data-path/app/";
+
+      async function readZipEntries(file) {
+        if (typeof fflate === "undefined") {
+          throw new Error("fflate.min.js is missing next to index.html");
+        }
+        const tailLen = Math.min(file.size, 22 + 65535);
+        if (tailLen < 22) throw new Error("not a zip file");
+        const tail = new DataView(await file.slice(file.size - tailLen).arrayBuffer());
+        let eocd = -1;
+        for (let i = tailLen - 22; i >= 0; i--) {
+          if (tail.getUint32(i, true) === 0x06054b50) {
+            eocd = i;
+            break;
+          }
+        }
+        if (eocd < 0) throw new Error("not a zip file");
+        const total = tail.getUint16(eocd + 10, true);
+        const cdSize = tail.getUint32(eocd + 12, true);
+        const cdOffset = tail.getUint32(eocd + 16, true);
+        if (total === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) {
+          throw new Error("zip64 archives are not supported");
+        }
+        const cd = new DataView(await file.slice(cdOffset, cdOffset + cdSize).arrayBuffer());
+        const decoder = new TextDecoder();
+        const entries = [];
+        let p = 0;
+        while (p + 46 <= cd.byteLength && cd.getUint32(p, true) === 0x02014b50) {
+          const flags = cd.getUint16(p + 8, true);
+          const method = cd.getUint16(p + 10, true);
+          const csize = cd.getUint32(p + 20, true);
+          const usize = cd.getUint32(p + 24, true);
+          const nlen = cd.getUint16(p + 28, true);
+          const elen = cd.getUint16(p + 30, true);
+          const clen = cd.getUint16(p + 32, true);
+          const lho = cd.getUint32(p + 42, true);
+          if (csize === 0xffffffff || usize === 0xffffffff || lho === 0xffffffff) {
+            throw new Error("zip64 archives are not supported");
+          }
+          const rawName = new Uint8Array(cd.buffer, cd.byteOffset + p + 46, nlen);
+          const name = decoder.decode(rawName).replace(/\\/g, "/");
+          entries.push({ name, flags, method, csize, usize, lho });
+          p += 46 + nlen + elen + clen;
+        }
+        if (entries.length !== total) throw new Error("the zip's file list looks damaged");
+        return entries;
+      }
+
+      // Works out where the game folder starts inside the zip (the zip may contain the
+      // folder itself, e.g. "Rollercoaster Tycoon 2/Data/ch.dat", or just its contents)
+      function planZipImport(entries) {
+        const files = entries.filter(
+          (e) => !e.name.endsWith("/") && !/(^|\/)(__MACOSX\/|\.DS_Store$|Thumbs\.db$)/i.test(e.name)
+        );
+        const marker = "data/ch.dat";
+        let prefix = null;
+        for (const e of files) {
+          if (!e.name.toLowerCase().endsWith(marker)) continue;
+          const candidate = e.name.slice(0, e.name.length - marker.length);
+          if (candidate !== "" && !candidate.endsWith("/")) continue;
+          if (prefix === null || candidate.length < prefix.length) prefix = candidate;
+        }
+        if (prefix === null) throw new Error("No Data/ch.dat file");
+        const plan = files
+          .filter((e) => e.name.startsWith(prefix))
+          .map((e) => ({ ...e, dest: ZIP_DEST + e.name.slice(prefix.length) }));
+        // check every path up front so a bad zip is rejected before anything is written
+        for (const e of plan) {
+          if (e.dest.split("/").includes("..")) throw new Error("unsafe path in zip: " + e.name);
+        }
+        return plan;
+      }
+
+      async function importZip(file, plan, fsApi, onProgress) {
+        const madeDirs = new Set();
+        let totalBytes = 0;
+        let doneBytes = 0;
+        let done = 0;
+        for (const e of plan) totalBytes += e.usize;
+        for (const e of plan) {
+          if (e.flags & 1) throw new Error("password-protected zips are not supported");
+          if (e.method !== 0 && e.method !== 8) {
+            throw new Error("unsupported compression method " + e.method + " (" + e.name + ")");
+          }
+          if (e.dest.split("/").includes("..")) throw new Error("unsafe path in zip: " + e.name);
+          const lh = new DataView(await file.slice(e.lho, e.lho + 30).arrayBuffer());
+          if (lh.byteLength < 30 || lh.getUint32(0, true) !== 0x04034b50) {
+            throw new Error("damaged entry: " + e.name);
+          }
+          const start = e.lho + 30 + lh.getUint16(26, true) + lh.getUint16(28, true);
+          let data = new Uint8Array(await file.slice(start, start + e.csize).arrayBuffer());
+          if (e.method === 8) data = fflate.inflateSync(data, { out: new Uint8Array(e.usize) });
+          if (data.length !== e.usize) throw new Error("size mismatch: " + e.name);
+          const dir = e.dest.slice(0, e.dest.lastIndexOf("/"));
+          if (!madeDirs.has(dir)) {
+            fsApi.mkdirTree(dir);
+            madeDirs.add(dir);
+          }
+          fsApi.writeFile(e.dest, data);
+          done++;
+          doneBytes += e.usize;
+          onProgress(done, plan.length, doneBytes, totalBytes);
+        }
+      }
+      // ZIPIMPORT-END
+
+      function zipProgress(done, total, doneBytes, totalBytes) {
+        if (done % 10 !== 0 && done !== total) return;
+        document.getElementById("overlay-text").textContent =
+          "Importing " + done + "/" + total + " files (" +
+          ((doneBytes / 1048576) | 0) + " / " + ((totalBytes / 1048576) | 0) + " MB)";
+      }
+
+      function customZipPicker() {
+        const input = document.getElementById("data-zip");
+        input.value = "";
+        return new Promise((resolve) => {
+          input.addEventListener("change", (ev) => {
+            const zip = ev.target.files && ev.target.files[0];
+            if (zip) resolve({ zip });
+          });
+        });
+      }
+
+      function setPickersVisible(visible) {
+        for (const id of ["folder-label", "data-folder", "zip-pick"]) {
+          const el = document.getElementById(id);
+          if (el) el.style.display = visible ? "" : "none";
+        }
+      }
 
       function launch() {
         Module.canvas.oncontextmenu = () => false;
@@ -196,6 +353,7 @@
           document.getElementById("overlay").appendChild(ackButton);
         }
         let prom = customDirectoryPicker();
+        let zipProm = customZipPicker();
         if (localStorage["rct2-data-version"] != 2) {
           const loads = await fetch("output.json")
             .then((response) => response.json())
@@ -217,8 +375,13 @@
         if (localStorage["rct2-data-checked"] != 1) {
           while (1) {
             try {
-              const files = await prom;
-              if (files instanceof FileSystemDirectoryHandle) {
+              const files = await Promise.race([prom, zipProm]);
+              if (files && files.zip) {
+                setPickersVisible(false);
+                overlayText.textContent = "Reading zip...";
+                const plan = planZipImport(await readZipEntries(files.zip));
+                window.pendingZip = { file: files.zip, plan };
+              } else if (typeof FileSystemDirectoryHandle !== "undefined" && files instanceof FileSystemDirectoryHandle) {
                 const file = await (await files.getDirectoryHandle("Data")).getFileHandle("ch.dat");
                 await ingestDirectory(["rct2-data-path", "app"], files);
               } else {
@@ -233,14 +396,21 @@
               break;
             } catch(err) {
               console.error(err);
-              overlayText.textContent = "Sorry, that didn't look right. The game folder should contain a folder named 'Data' which contains 'ch.dat'"
+              setPickersVisible(true);
+              overlayText.textContent = "Sorry, that didn't look right. The game folder (or zip) should contain a folder named 'Data' which contains 'ch.dat' (" + err.message + ")";
             }
             prom = customDirectoryPicker();
+            zipProm = customZipPicker();
           }
           await load("./user-data-path/config.ini");
         }
 
-        document.getElementById("overlay").style.display = "none";
+        if (window.pendingZip) {
+          // keep the overlay up to show import progress; it's hidden once the import is done
+          overlayText.textContent = "Starting import...";
+        } else {
+          document.getElementById("overlay").style.display = "none";
+        }
         launch();
       }
 
