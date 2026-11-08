@@ -1,9 +1,7 @@
 name: Build ORCT2-web
 
+# 커밋/푸시해도 자동으로 빌드하지 않아요. Actions 탭 → Build ORCT2-web → "Run workflow" 로 직접 실행하세요.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 # 같은 브랜치에 새 커밋이 들어오면 진행 중인 이전 빌드는 취소 (빌드가 겹치지 않게)
