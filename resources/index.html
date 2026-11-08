@@ -120,6 +120,21 @@
                 return;
               }
             }
+            // 저장된 설정의 타이틀 화면이 RCT1용(*RCT1...)이면 RCT2용으로 고쳐요.
+            // RCT1 파일이 없으면 타이틀 화면이 계속 실패하며 반복돼서 화면이 까맣게 멈춰요.
+            try {
+              const cfgPath = "/persistent/user-data-path/config.ini";
+              if (FS.analyzePath(cfgPath).exists) {
+                const cfgText = FS.readFile(cfgPath, { encoding: "utf8" });
+                const cfgFixed = cfgText.replace(/^(current_title_sequence\s*=\s*)"\*RCT1[^"\r\n]*"/m, '$1"*RCT2"');
+                if (cfgFixed !== cfgText) {
+                  FS.writeFile(cfgPath, cfgFixed);
+                  console.log("config.ini: 타이틀 화면을 *RCT2 로 교정했어요");
+                }
+              }
+            } catch (e) {
+              console.warn("config.ini 교정 실패", e);
+            }
             if (typeof localStorage != "undefined") {
               FS.syncfs(false, (err) => {
                 if (!err) {

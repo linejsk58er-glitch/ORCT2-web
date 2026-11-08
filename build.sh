@@ -189,6 +189,11 @@ build_openrct2() {
     patch -d "$OPENRCT_SRCROOT" -p1 < "$PATCHES_ROOT/openrct2-ttf-emscripten.patch"
   fi
 
+  # 디버그용 링크 플래그 제거 (런타임 검사/GL 호출 로깅이 켜져 있으면 느려요)
+  sed -i -e 's/ -gsource-map//' \
+         -e 's/ -s EXCEPTION_DEBUG=1//' -e 's/ -s GL_DEBUG=1//' \
+         "$OPENRCT_SRCROOT/src/openrct2-ui/CMakeLists.txt"
+
   pushd $OPENRCT_BUILDROOT
   emcmake env \
       PKG_CONFIG_PATH="$EMSDK_ROOT/upstream/emscripten/cache/sysroot/local/lib/pkgconfig:$EMSDK_ROOT/upstream/emscripten/cache/sysroot/lib/pkgconfig:$EMSDK_ROOT/upstream/emscripten/cache/sysroot/share/pkgconfig" \
@@ -208,6 +213,8 @@ build_openrct2() {
     -DSPEEXDSP_LIBRARY="$SPEEXDSP_ROOT/libspeexdsp/.libs/libspeexdsp.a" \
     -DDISABLE_HTTP:BOOL=FALSE \
     -DDISABLE_TTF:BOOL=FALSE \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DDISABLE_IPO:BOOL=TRUE \
     -DENABLE_SCRIPTING:BOOL=FALSE \
     -DDISABLE_FLAC:BOOL=TRUE \
     -DCMAKE_SYSTEM_NAME=Emscripten
